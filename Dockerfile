@@ -30,7 +30,8 @@ ADD --checksum=sha256:${SEGMENTER_SHA256} \
 RUN tar -xzf /tmp/tasks-vision.tgz -C /tmp \
     && mkdir -p /out/wasm \
     && cp /tmp/package/vision_bundle.mjs /out/ \
-    && cp /tmp/package/wasm/vision_wasm_internal.* /tmp/package/wasm/vision_wasm_nosimd_internal.* /out/wasm/
+    && cp /tmp/package/wasm/vision_wasm_internal.* /tmp/package/wasm/vision_wasm_nosimd_internal.* /out/wasm/ \
+    && chmod -R a+rX /out
 
 FROM gcr.io/distroless/static-debian13:nonroot AS minimal
 WORKDIR /galene
