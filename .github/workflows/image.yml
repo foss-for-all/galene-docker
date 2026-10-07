@@ -1,0 +1,88 @@
+name: Image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/galene
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [release, edge]
+        target: [full, minimal]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Resolve Galene source
+        id: src
+        run: |
+          if [ "${{ matrix.channel }}" = release ]; then
+            ref=$(sed -n 's/^ARG GALENE_REF=//p' Dockerfile)
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
+            echo "version=${ref#galene-}" >> "$GITHUB_OUTPUT"
+          else
+            sha=$(git ls-remote https://github.com/jech/galene.git refs/heads/master | cut -f1)
+            echo "ref=$sha" >> "$GITHUB_OUTPUT"
+            echo "short=${sha::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/metadata-action@v6.2.0
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.target == 'minimal' && '-minimal' || '' }},onlatest=true
+          tags: |
+            type=semver,pattern={{version}},value=v${{ steps.src.outputs.version }},enable=${{ matrix.channel == 'release' }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.src.outputs.version }},enable=${{ matrix.channel == 'release' }}
+            type=semver,pattern={{major}},value=v${{ steps.src.outputs.version }},enable=${{ matrix.channel == 'release' }}
+            type=raw,value=latest,enable=${{ matrix.channel == 'release' }}
+            type=raw,value=edge,enable=${{ matrix.channel == 'edge' }}
+            type=raw,value=edge-${{ steps.src.outputs.short }},enable=${{ matrix.channel == 'edge' }}
+          labels: |
+            org.opencontainers.image.title=galene
+            org.opencontainers.image.description=Galene videoconference server
+            org.opencontainers.image.licenses=${{ matrix.target == 'full' && 'MIT AND Apache-2.0' || 'MIT' }}
+            org.opencontainers.image.version=${{ steps.src.outputs.version || steps.src.outputs.short }}
+
+      - uses: docker/setup-buildx-action@v4.4.1
+
+      - uses: docker/login-action@v4.6.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          build-args: GALENE_REF=${{ steps.src.outputs.ref }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.channel }}-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.channel }}-${{ matrix.target }}
