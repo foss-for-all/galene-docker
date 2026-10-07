@@ -1,0 +1,30 @@
+name: galene
+
+services:
+  galene:
+    image: ghcr.io/foss-for-all/galene:${GALENE_TAG:-latest}
+    build:
+      context: .
+      target: ${GALENE_TARGET:-full}
+    network_mode: host
+    command:
+      - -insecure
+      - -http
+      - ${GALENE_HTTP:-127.0.0.1:8443}
+      - -turn
+      - ${GALENE_TURN:?set GALENE_TURN to <public-ip>:1194}
+    user: ${GALENE_UID:-65532}:${GALENE_GID:-65532}
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${GALENE_DIR:-.}/data:/galene/data
+      - ${GALENE_DIR:-.}/groups:/galene/groups
+      - ${GALENE_DIR:-.}/recordings:/galene/recordings
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile: 65536
+    restart: unless-stopped
